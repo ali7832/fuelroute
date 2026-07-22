@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+.env
+.venv/
+venv/
+env/
+data/geocode-cache.json
+.ruff_cache/
+.DS_Store

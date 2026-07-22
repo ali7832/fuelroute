@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuel route</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root { --ink: #1c1c1e; --muted: #6b6b70; --line: #e4e4e7; --accent: #0f7b6c; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: var(--ink); }
+    #map { position: absolute; inset: 0; }
+    .panel {
+      position: absolute; z-index: 1000; top: 16px; left: 16px; width: 300px;
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+      padding: 16px 18px; box-shadow: 0 6px 24px rgba(0,0,0,.08);
+    }
+    .panel h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .01em; }
+    .panel .route { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .metric { background: #f7f7f8; border-radius: 9px; padding: 8px 10px; }
+    .metric .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .metric .v { font-size: 17px; font-weight: 600; margin-top: 2px; }
+    .stops { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; }
+    .stops li { border-top: 1px solid var(--line); padding: 8px 0; font-size: 13px; }
+    .stops .name { font-weight: 600; }
+    .stops .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .error { color: #b3261e; font-size: 14px; }
+  </style>
+</head>
+<body>
+  {% if error %}
+    <div class="panel"><h1>Couldn't plan this trip</h1><p class="error">{{ error }}</p></div>
+  {% else %}
+    <div class="panel" id="panel"></div>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      const plan = {{ plan_json|safe }};
+
+      const map = L.map("map");
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors", maxZoom: 18,
+      }).addTo(map);
+
+      const line = L.polyline(plan.route, { color: "#0f7b6c", weight: 4, opacity: .85 }).addTo(map);
+      map.fitBounds(line.getBounds(), { padding: [60, 60] });
+
+      L.marker(plan.route[0]).addTo(map).bindPopup("Start: " + plan.start.query);
+      L.marker(plan.route[plan.route.length - 1]).addTo(map).bindPopup("Finish: " + plan.finish.query);
+
+      const money = n => "$" + n.toFixed(2);
+      for (const stop of plan.fuel_stops) {
+        if (stop.lat == null) continue;  // the departure fill-up has no station point
+        L.circleMarker([stop.lat, stop.lon], {
+          radius: 7, color: "#0f7b6c", fillColor: "#0f7b6c", fillOpacity: .9,
+        }).addTo(map).bindPopup(
+          `<b>${stop.name}</b><br>${stop.city}, ${stop.state}` +
+          `<br>${money(stop.price_per_gallon)}/gal` +
+          `<br>${stop.gallons.toFixed(1)} gal &middot; ${money(stop.cost)}`
+        );
+      }
+
+      const stopRows = plan.fuel_stops.map(s => `
+        <li>
+          <div class="name">${s.name}${s.city ? " &middot; " + s.city + ", " + s.state : ""}</div>
+          <div class="sub">mile ${s.mile_marker} &middot; ${money(s.price_per_gallon)}/gal &middot;
+            ${s.gallons.toFixed(1)} gal &middot; ${money(s.cost)}</div>
+        </li>`).join("");
+
+      document.getElementById("panel").innerHTML = `
+        <h1>Fuel plan</h1>
+        <div class="route">${plan.start.query} &rarr; ${plan.finish.query}</div>
+        <div class="metrics">
+          <div class="metric"><div class="k">Distance</div><div class="v">${plan.total_distance_miles.toLocaleString()} mi</div></div>
+          <div class="metric"><div class="k">Fuel cost</div><div class="v">${money(plan.total_fuel_cost)}</div></div>
+          <div class="metric"><div class="k">Gallons</div><div class="v">${plan.total_gallons.toFixed(0)}</div></div>
+          <div class="metric"><div class="k">Stops</div><div class="v">${plan.fuel_stops.length}</div></div>
+        </div>
+        <ul class="stops">${stopRows}</ul>`;
+    </script>
+  {% endif %}
+</body>
+</html>
