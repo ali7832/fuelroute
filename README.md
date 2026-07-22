@@ -1,23 +1,15 @@
-﻿## Live API
-
-> **Deployed endpoint:** https://fuelroute-718272209757.us-central1.run.app
-> No setup needed — try it directly:
->
-> `````bash
-> curl -X POST https://fuelroute-718272209757.us-central1.run.app/api/route/ \
->   -H 'Content-Type: application/json' \
->   -d '{"start": "Chicago, IL", "finish": "Denver, CO"}' `````\n\n# Fuel Route
+# Fuel Route
 
 A small Django API that plans the cheapest way to fuel a road trip across the US.
 Give it a start and a finish; it returns the driving route, the fuel stops to make
-along the way, and what the fuel will cost â€” assuming a 500-mile range and 10 MPG.
+along the way, and what the fuel will cost — assuming a 500-mile range and 10 MPG.
 
 ## How it works
 
 A single request flows through four steps:
 
 1. **Geocode** the start and finish with Nominatim (OpenStreetMap).
-2. **Route** them with OSRM â€” one call returns the full geometry *and* the driving
+2. **Route** them with OSRM — one call returns the full geometry *and* the driving
    distance, so the routing service is hit exactly once per trip.
 3. **Match** truckstops from the dataset against the route. Stations are pulled by
    a bounding box, then a vectorised nearest-vertex pass keeps the ones within a
@@ -44,8 +36,8 @@ python manage.py runserver
 
 ### The geocoding step
 
-The dataset identifies each truckstop only down to its city â€” there are no
-coordinates in the file â€” so stations are geocoded to their city centre once and
+The dataset identifies each truckstop only down to its city — there are no
+coordinates in the file — so stations are geocoded to their city centre once and
 cached. `geocode_stations` walks the ~3,900 unique cities, respects Nominatim's
 one-request-per-second policy, and writes results to `data/geocode-cache.json`. It
 is **resumable**: stop it any time and re-run to pick up where it left off. A full
@@ -115,7 +107,7 @@ request.
   planned results are cached by (start, finish), so the JSON and map endpoints share
   a single call.
 - **Fast matching.** Candidate stations are narrowed by an indexed bounding-box
-  query, then matched to the route in one vectorised numpy pass â€” no per-station API
+  query, then matched to the route in one vectorised numpy pass — no per-station API
   calls at request time.
 - **Optimizer correctness.** The greedy is verified in the test suite against an
   independent fine-grained reference cost, and the API/planner paths are covered with
@@ -145,4 +137,3 @@ routing/
   tests/
 data/fuel-prices.csv  the provided dataset
 ```
-
