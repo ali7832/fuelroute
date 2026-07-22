@@ -1,4 +1,4 @@
-"""Turn place names into coordinates via Nominatim (OpenStreetMap).
+﻿"""Turn place names into coordinates via Nominatim (OpenStreetMap).
 
 Keyless, but its usage policy asks for an identifying User-Agent and no more than
 one request per second, so callers that hit it in bulk should throttle.
@@ -14,9 +14,14 @@ class GeocodingError(Exception):
     pass
 
 
+def _cache_key(country, query):
+    raw = f"geocode_{country}_{query.strip().lower()}"
+    return raw.replace(" ", "_").replace(",", "").replace("'", "")
+
+
 def geocode(query, *, country="us"):
     """Return (lat, lon) for a free-form place name, or raise GeocodingError."""
-    key = f"geocode:{country}:{query.strip().lower()}"
+    key = _cache_key(country, query)
     hit = cache.get(key)
     if hit is not None:
         return hit

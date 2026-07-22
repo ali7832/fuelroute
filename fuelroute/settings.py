@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,6 +51,7 @@ CACHES = {
 }
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 
@@ -59,17 +60,15 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
-    # Public, keyless API: no auth layer, so nothing reaches for request.user.
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    "UNAUTHENTICATED_USER": None,
 }
 
 # --- Trip / vehicle assumptions (from the assignment) ---------------------
 VEHICLE_RANGE_MILES = float(os.environ.get("VEHICLE_RANGE_MILES", 500))
 VEHICLE_MPG = float(os.environ.get("VEHICLE_MPG", 10))
 
-# How far off the route (miles) a truckstop can be and still count as usable.
-# Generous because stations are geocoded to their city, not the exact exit.
 ROUTE_MATCH_BUFFER_MILES = float(os.environ.get("ROUTE_MATCH_BUFFER_MILES", 25))
 
 # --- External services (both keyless by default) --------------------------
@@ -77,7 +76,6 @@ OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org
 NOMINATIM_BASE_URL = os.environ.get(
     "NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org"
 )
-# Nominatim's usage policy requires a real identifying User-Agent.
 GEOCODER_USER_AGENT = os.environ.get(
     "GEOCODER_USER_AGENT", "fuelroute/1.0 (be-assessment)"
 )
