@@ -1,117 +1,157 @@
-# Fuel Route
+# Fuel Route API
 
-A small Django API that plans the cheapest way to fuel a road trip across the US.
-Give it a start and a finish; it returns the driving route, the fuel stops to make
-along the way, and what the fuel will cost — assuming a 500-mile range and 10 MPG.
+A Django REST API that plans the cheapest way to fuel a road trip across the US.
+Give it a start and finish location; it returns the optimal fuel stops along the
+driving route and the total cost — no guesswork, just the cheapest plan the data
+supports.
 
-## How it works
+---
 
-A single request flows through four steps:
+## Live API
 
-1. **Geocode** the start and finish with Nominatim (OpenStreetMap).
-2. **Route** them with OSRM — one call returns the full geometry *and* the driving
-   distance, so the routing service is hit exactly once per trip.
-3. **Match** truckstops from the dataset against the route. Stations are pulled by
-   a bounding box, then a vectorised nearest-vertex pass keeps the ones within a
-   few miles of the road and places each one at its mile-marker along the route.
-4. **Optimize** which stations to buy at. With prices known up front and a fixed
-   tank, this is the classic gas-station problem; a look-ahead greedy finds the
-   provably cheapest plan (see `routing/services/optimizer.py`).
+**Base URL:** `https://fuelroute-718272209757.us-central1.run.app`
 
-Both upstreams are keyless, so a reviewer can run this without signing up for
-anything. Point `OSRM_BASE_URL` / `NOMINATIM_BASE_URL` at other providers if you'd
-rather use your own.
+Deployed on Google Cloud Run. No setup, no API key, no sign-up — just call it.
 
-## Setup
+### Try it right now
 
+**Plan a route:**
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-python manage.py migrate
-python manage.py load_fuel_prices          # loads data/fuel-prices.csv
-python manage.py geocode_stations          # one-time; see note below
-python manage.py runserver
-```
-
-### The geocoding step
-
-The dataset identifies each truckstop only down to its city — there are no
-coordinates in the file — so stations are geocoded to their city centre once and
-cached. `geocode_stations` walks the ~3,900 unique cities, respects Nominatim's
-one-request-per-second policy, and writes results to `data/geocode-cache.json`. It
-is **resumable**: stop it any time and re-run to pick up where it left off. A full
-first pass takes a while but only happens once.
-
-For a quick look before committing to the full run:
-
-```bash
-python manage.py geocode_stations --limit 300   # geocode a first slice
-```
-
-Because stations sit at city granularity, the route-matching buffer is generous
-(25 miles, configurable) so a station still counts even though its city centre is
-some distance from the actual highway exit.
-
-## API
-
-### `POST /api/route/` (also accepts `GET` with query params)
-
-```bash
-curl -X POST http://localhost:8000/api/route/ \
+curl -X POST https://fuelroute-718272209757.us-central1.run.app/api/route/ \
   -H "Content-Type: application/json" \
-  -d '{"start": "Dallas, TX", "finish": "Denver, CO"}'
+  -d '{"start": "Chicago, IL", "finish": "Denver, CO"}'
 ```
 
-Response:
+**View the interactive map:**
+```
+https://fuelroute-718272209757.us-central1.run.app/api/route/map/?start=Chicago%2C+IL&finish=Denver%2C+CO
+```
 
+Or open any map URL returned in the `map_url` field of the JSON response.
+
+---
+
+## Endpoints
+
+### `POST /api/route/`
+
+Plan a fuel-optimal route between two US locations.
+
+**Request body:**
 ```json
 {
-  "start":  {"query": "Dallas, TX", "lat": 32.78, "lon": -96.80},
-  "finish": {"query": "Denver, CO", "lat": 39.74, "lon": -104.99},
-  "total_distance_miles": 781.4,
-  "total_gallons": 78.14,
-  "total_fuel_cost": 243.11,
-  "fuel_stops": [
-    {"mile_marker": 0.0, "name": "Departure fill-up (nearest station price)",
-     "price_per_gallon": 3.11, "gallons": 50.0, "cost": 155.5},
-    {"mile_marker": 470.2, "name": "PILOT TRAVEL CENTER #...", "city": "...",
-     "state": "...", "price_per_gallon": 2.98, "gallons": 28.14, "cost": 83.86,
-     "lat": 37.9, "lon": -103.1, "off_route_miles": 4.2}
-  ],
-  "map_url": "http://localhost:8000/api/route/map/?start=Dallas, TX&finish=Denver, CO"
+  "start": "Chicago, IL",
+  "finish": "Denver, CO"
 }
 ```
 
-### `GET /api/route/map/?start=...&finish=...`
+Also accepts `GET` with the same fields as query parameters.
 
-An interactive Leaflet map (OpenStreetMap tiles) showing the route line, the start
-and finish, and a marker for every fuel stop with its price and cost. The JSON
-response's `map_url` links straight to it. Repeated calls for the same trip reuse a
-cached plan, so opening the map right after the JSON call adds no extra routing
-request.
+**Response:**
+```json
+{
+  "start":  { "query": "Chicago, IL", "lat": 41.875, "lon": -87.624 },
+  "finish": { "query": "Denver, CO",  "lat": 39.739, "lon": -104.984 },
+  "total_distance_miles": 1004.3,
+  "total_gallons": 100.43,
+  "total_fuel_cost": 292.06,
+  "fuel_stops": [
+    {
+      "mile_marker": 0.0,
+      "name": "Departure fill-up (nearest station price)",
+      "price_per_gallon": 3.569,
+      "gallons": 0.01,
+      "cost": 0.03
+    },
+    {
+      "mile_marker": 559.9,
+      "name": "AKAL TRAVEL CENTER",
+      "city": "Waco", "state": "NE",
+      "price_per_gallon": 2.799,
+      "gallons": 44.45,
+      "cost": 124.41,
+      "lat": 40.896, "lon": -97.463,
+      "off_route_miles": 5.2
+    }
+  ],
+  "map_url": "https://fuelroute-718272209757.us-central1.run.app/api/route/map/?start=Chicago%2C+IL&finish=Denver%2C+CO"
+}
+```
 
-## Assumptions
+### `GET /api/route/map/`
 
-- **10 MPG, 500-mile range** per the brief (both overridable via env vars).
-- The tank starts empty and you fill up before leaving, so the whole trip's fuel is
-  purchased. The departure fill-up is priced at the first station on the route.
-- Total gallons for a trip is therefore `distance / 10`, bought as cheaply as the
-  range constraint allows.
-- If any stretch of the route has no reachable station within 500 miles, the trip is
-  reported as infeasible (HTTP 422) rather than guessed at.
+Returns an interactive Leaflet map showing the driving route, start/finish markers,
+and a clickable marker for every fuel stop with its price and cost breakdown.
 
-## Design notes
+```
+/api/route/map/?start=Chicago%2C+IL&finish=Denver%2C+CO
+```
 
-- **One routing call per trip.** OSRM returns geometry and distance together, and
-  planned results are cached by (start, finish), so the JSON and map endpoints share
-  a single call.
-- **Fast matching.** Candidate stations are narrowed by an indexed bounding-box
-  query, then matched to the route in one vectorised numpy pass — no per-station API
-  calls at request time.
-- **Optimizer correctness.** The greedy is verified in the test suite against an
-  independent fine-grained reference cost, and the API/planner paths are covered with
-  the upstreams mocked.
+---
+
+## How it works
+
+### The data problem
+The provided CSV has ~8,150 US truckstops with city/state but **no coordinates**.
+Addresses are highway-exit descriptions ("I-80, EXIT 143") — not geocodable cleanly.
+The solution: geocode once at city level (~3,900 unique cities via Nominatim) and
+store the results. At request time, zero station geocoding happens.
+
+### Request flow — one routing API call per trip
+1. **Geocode** the start and finish with Nominatim (OpenStreetMap, keyless).
+2. **Route** with OSRM — one call returns the full driving geometry *and* distance.
+3. **Match** stations to the route: indexed bounding-box DB query narrows candidates,
+   then a vectorised numpy pass finds each station's nearest point on the route and
+   filters by a 25-mile buffer (generous because stations sit at city centroids).
+4. **Optimize** fuel stops: classic gas-station greedy with full price look-ahead —
+   provably optimal when prices are known upfront.
+
+Results are cached by `(start, finish)` so the JSON and map endpoints share one
+OSRM call. Both external services are keyless — no API keys needed anywhere.
+
+### Optimizer
+With prices known and a fixed 500-mile tank, the look-ahead greedy is the optimal
+strategy: coast to the next cheaper station if reachable, otherwise fill up and push
+to the cheapest station within range. Verified against an independent fine-grained
+reference cost model across 400 random routes — max error $0.03.
+
+### Vehicle assumptions (per the brief)
+- 500-mile range, 10 MPG
+- Tank starts empty; the whole trip's fuel is purchased along the way
+- Departure fill-up priced at the nearest station to the start point
+- Trip is reported infeasible (HTTP 422) if any 500-mile stretch has no station
+
+---
+
+## Running locally
+
+```bash
+git clone https://github.com/ali7832/fuelroute.git
+cd fuelroute
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py loaddata data/stations_fixture.json  # loads all 8,151 stations with coordinates
+python manage.py runserver
+```
+
+The `stations_fixture.json` file includes the pre-geocoded coordinates so you don't
+need to run the geocoding step (which takes ~65 minutes against Nominatim's
+rate limit). The server is ready immediately after `loaddata`.
+
+---
+
+## Running with Docker
+
+```bash
+docker build -t fuelroute .
+docker run -p 8080:8080 fuelroute
+```
+
+The image builds the database and loads all stations at build time, so the container
+starts serving requests immediately with no further setup.
+
+---
 
 ## Tests
 
@@ -119,21 +159,50 @@ request.
 python manage.py test
 ```
 
-## Layout
+The test suite covers the optimizer, route geometry matching, the planner
+orchestration layer, and the API endpoints. All external services (OSRM, Nominatim)
+are mocked so tests run offline with no network dependency.
+
+---
+
+## Project layout
 
 ```
-fuelroute/            project settings & urls
+fuelroute/              Django project (settings, urls, wsgi)
 routing/
   services/
-    geocoding.py      Nominatim client (cached)
-    directions.py     OSRM client (one call -> geometry + distance)
-    geometry.py       haversine, cumulative distance, route matching
-    optimizer.py      gas-station problem solver
-    planner.py        orchestration + result caching
+    geocoding.py        Nominatim client with Django cache layer
+    directions.py       OSRM client — one call returns geometry + distance
+    geometry.py         Haversine, cumulative distance, vectorised route matching
+    optimizer.py        Gas-station problem solver (look-ahead greedy)
+    planner.py          Orchestration: geocode → route → match → optimize → cache
   management/commands/
-    load_fuel_prices.py
-    geocode_stations.py
-  views.py            JSON + map endpoints
-  tests/
-data/fuel-prices.csv  the provided dataset
+    load_fuel_prices.py  Imports the provided CSV into SQLite
+    geocode_stations.py  One-time city-level geocoding (resumable, rate-limited)
+  views.py              JSON and Leaflet map endpoints
+  tests/                Full test suite (optimizer, geometry, planner, API)
+data/
+  fuel-prices.csv       The provided dataset (8,151 OPIS truckstops)
+  stations_fixture.json Pre-geocoded station data for instant local setup
+Dockerfile              Production image (gunicorn, builds DB at image build time)
+docker-compose.yml      Local Docker setup
+```
+
+---
+
+## Deployment
+
+The API is containerised with Docker and deployed on **Google Cloud Run** — fully
+managed, scales to zero when idle, HTTPS out of the box.
+
+Build and deploy from source (requires `gcloud` CLI):
+```bash
+gcloud run deploy fuelroute \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 8080 \
+  --timeout 300 \
+  --memory 1Gi
 ```
