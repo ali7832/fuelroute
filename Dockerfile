@@ -13,8 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 COPY . .
 
 RUN python manage.py migrate && \
-    python manage.py load_fuel_prices && \
-    python manage.py geocode_stations --sleep 0
+    python manage.py loaddata data/stations_fixture.json
 
 EXPOSE 8080
 
